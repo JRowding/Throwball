@@ -2,18 +2,19 @@ import React, {useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {ArrowLeft, ArrowRight, Check, SlidersHorizontal, Target} from 'lucide-react';
 import './styles.css';
-import {DEFAULT_CONFIG,FIXTURES,TEAMS,decodeSave,emptyEntry,expectedGoals,matchResult,name,probabilities,standings,teamSlot,validateConfig} from './game.js';
+import {DEFAULT_CONFIG,FIXTURES,decodeSave,emptyEntry,expectedGoals,matchResult,name,probabilities,standings,teamSlot,validateConfig} from './game.js';
 
-const KEY='throwball-mw1-v2';
+const KEY='throwball-mw1-v3';
+const LEGACY_KEY='throwball-mw1-v2';
 function App(){
- const [selected,setSelected]=useState(0),[entries,setEntries]=useState({}),[drafts,setDrafts]=useState({}),[config,setConfig]=useState(DEFAULT_CONFIG),[tuning,setTuning]=useState(DEFAULT_CONFIG),[ready,setReady]=useState(false),[message,setMessage]=useState('Results and unfinished visits are saved in this browser.'),[error,setError]=useState('');
- useEffect(()=>{try{const raw=localStorage.getItem(KEY); if(raw){const s=decodeSave(raw); setEntries(s.entries); setDrafts(s.drafts); setConfig(s.config); setTuning(s.config);}}catch{setError('Your saved game could not be loaded. This session starts fresh.');} setReady(true);},[]);
- useEffect(()=>{if(!ready)return; localStorage.setItem(KEY,JSON.stringify({entries,drafts,config}));},[ready,entries,drafts,config]);
+ const [selected,setSelected]=useState(0),[entries,setEntries]=useState({}),[drafts,setDrafts]=useState({}),[config,setConfig]=useState(DEFAULT_CONFIG),[tuning,setTuning]=useState(DEFAULT_CONFIG),[ready,setReady]=useState(false),[message,setMessage]=useState('Progress saves automatically on this device.'),[error,setError]=useState('');
+ useEffect(()=>{try{const raw=localStorage.getItem(KEY)||localStorage.getItem(LEGACY_KEY); if(raw){const parsed=JSON.parse(raw),s=decodeSave(raw); setEntries(s.entries); setDrafts(s.drafts); setConfig(s.config); setTuning(s.config); if(Number.isInteger(parsed.selected)&&parsed.selected>=0&&parsed.selected<FIXTURES.length)setSelected(parsed.selected); setMessage('Saved progress restored.');}}catch{setError('Your saved game could not be loaded. This session starts fresh.');} setReady(true);},[]);
+ useEffect(()=>{if(!ready)return; const payload=JSON.stringify({entries,drafts,config,selected,savedAt:new Date().toISOString()}); localStorage.setItem(KEY,payload); localStorage.removeItem(LEGACY_KEY);},[ready,entries,drafts,config,selected]);
  const fixture=FIXTURES[selected],entry=drafts[fixture.id]??entries[fixture.id]??emptyEntry(),saved=entries[fixture.id],result=saved?matchResult(fixture,saved,config):null,dirty=!!saved&&JSON.stringify(entry)!==JSON.stringify(saved),rows=standings(entries,config),played=Object.keys(entries).length;
- const nav=i=>{setSelected(i);setMessage('Results and unfinished visits are saved in this browser.');setError('');};
- const update=(side,i,value)=>{setDrafts(d=>({...d,[fixture.id]:{...entry,[side]:entry[side].map((v,n)=>n===i?value:v)}}));setError('');setMessage('');};
- const record=()=>{try{const r=matchResult(fixture,entry,config),e={home:r.home.throws,away:r.away.throws};setEntries(s=>({...s,[fixture.id]:e}));setDrafts(s=>({...s,[fixture.id]:e}));setMessage(`${name(fixture.home)} ${r.home.goals}-${r.away.goals} ${name(fixture.away)} recorded.`);setError('');}catch(e){setError(e.message);setMessage('');}};
- const apply=ev=>{ev.preventDefault();try{validateConfig(tuning);setConfig(structuredClone(tuning));setMessage('Model applied. Recorded results have been recalculated.');setError('');}catch(e){setError(e.message);}};
+ const nav=i=>{setSelected(i);setMessage('Progress saved automatically.');setError('');};
+ const update=(side,i,value)=>{setDrafts(d=>({...d,[fixture.id]:{...entry,[side]:entry[side].map((v,n)=>n===i?value:v)}}));setError('');setMessage('Unfinished darts saved automatically.');};
+ const record=()=>{try{const r=matchResult(fixture,entry,config),e={home:r.home.throws,away:r.away.throws};setEntries(s=>({...s,[fixture.id]:e}));setDrafts(s=>({...s,[fixture.id]:e}));setMessage(`${name(fixture.home)} ${r.home.goals}-${r.away.goals} ${name(fixture.away)} recorded and saved.`);setError('');}catch(e){setError(e.message);setMessage('');}};
+ const apply=ev=>{ev.preventDefault();try{validateConfig(tuning);setConfig(structuredClone(tuning));setMessage('Model applied and saved. Recorded results have been recalculated.');setError('');}catch(e){setError(e.message);}};
  return <main>
   <header className="top"><div className="brand"><Target/>THROW<span>BALL</span></div><div>Premier League 26/27</div><div>First round</div></header>
   <section className="intro"><div><p>The dartboard decides</p><h1>Matchweek one.</h1><span>Three darts per team. Ten fixtures. One opening table.</span></div><strong>{played}<small>/10</small></strong></section>
