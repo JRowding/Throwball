@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {OUTCOMES,COMBINATIONS,FIXTURES,DEFAULT_CONFIG,normalizeThrow,combination,teamSlot,slotHitCount,expectedGoals,matchResult,standings} from '../src/game.js';
+import {OUTCOMES,COMBINATIONS,FIXTURES,DEFAULT_CONFIG,normalizeThrow,combination,teamSlot,slotHitCount,targetBoostValue,expectedGoals,matchResult,standings} from '../src/game.js';
 
 test('legal dart outcomes and aliases are validated',()=>{
  assert.equal(new Set(OUTCOMES).size,63);
@@ -37,8 +37,9 @@ test('fixture order gives each team a target number boost',()=>{
  assert.equal(teamSlot('COV'),2);
  assert.equal(teamSlot('CHE'),20);
  assert.equal(slotHitCount(['1','D1','T1'],1),3);
+ assert.equal(targetBoostValue(['1','D1','T1'],1),5.25);
  assert.equal(slotHitCount(['1','D1','T1'],2),0);
- assert.ok(expectedGoals('ARS','COV',true,DEFAULT_CONFIG,3)>expectedGoals('ARS','COV',true,DEFAULT_CONFIG,0));
+ assert.ok(expectedGoals('ARS','COV',true,DEFAULT_CONFIG,5.25)>expectedGoals('ARS','COV',true,DEFAULT_CONFIG,0));
  const r=matchResult(FIXTURES[0],{home:['1','D1','T1'],away:['2','D2','T2']});
  assert.equal(r.home.boostHits,3);
  assert.equal(r.away.boostHits,3);
@@ -52,4 +53,23 @@ test('fixtures and table balance',()=>{
  assert.equal(rows.length,20);
  assert.ok(rows.every(r=>r.p===1));
  assert.equal(rows.reduce((s,r)=>s+r.gf,0),rows.reduce((s,r)=>s+r.ga,0));
+});
+
+
+test('target singles doubles and trebles heavily improve scoring outcome',()=>{
+ const fixture = FIXTURES.find(f=>f.home==='BHA');
+ const result = matchResult(fixture,{home:['13','T15','13'],away:['MISS','MISS','9']});
+ assert.equal(result.home.boostHits,2);
+ assert.equal(result.home.boostValue,2);
+ assert.equal(result.away.boostHits,0);
+ assert.ok(result.home.scoringPercentile>result.home.percentile);
+ assert.ok(result.home.lambda>result.away.lambda);
+ assert.ok(result.home.goals>result.away.goals);
+ const single = matchResult(fixture,{home:['13','MISS','MISS'],away:['MISS','MISS','9']}).home;
+ const double = matchResult(fixture,{home:['D13','MISS','MISS'],away:['MISS','MISS','9']}).home;
+ const treble = matchResult(fixture,{home:['T13','MISS','MISS'],away:['MISS','MISS','9']}).home;
+ assert.ok(double.lambda>single.lambda);
+ assert.ok(treble.lambda>double.lambda);
+ assert.ok(double.scoringPercentile>=0.59);
+ assert.ok(treble.scoringPercentile>=0.72);
 });
