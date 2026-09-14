@@ -8,7 +8,7 @@ export const TEAMS = [
  ['NEW','Newcastle United',83],['LIV','Liverpool',87],['FUL','Fulham',75],['CHE','Chelsea',85],
 ];
 export const FIXTURES = Array.from({length:10},(_,i)=>({id:`mw1-${i+1}`,home:TEAMS[i*2][0],away:TEAMS[i*2+1][0],date:['Fri 21 Aug, 20:00','Sat 22 Aug, 12:30','Sat 22 Aug, 15:00','Sat 22 Aug, 15:00','Sat 22 Aug, 15:00','Sat 22 Aug, 17:30','Sun 23 Aug, 14:00','Sun 23 Aug, 14:00','Sun 23 Aug, 16:30','Mon 24 Aug, 20:00'][i]}));
-export const DEFAULT_CONFIG = {baseGoals:1.25,homeAdvantage:1.22,strengthScale:35,slotBoost:0.12,ratings:Object.fromEntries(TEAMS.map(([id,,rating])=>[id,rating]))};
+export const DEFAULT_CONFIG = {baseGoals:1.25,homeAdvantage:1.22,strengthScale:35,slotBoost:0.22,targetLift:0.18,ratings:Object.fromEntries(TEAMS.map(([id,,rating])=>[id,rating]))};
 export const emptyEntry = () => ({home:['','',''],away:['','','']});
 export const name = id => TEAMS.find(t=>t[0]===id)?.[1] ?? id;
 export function normalizeThrow(value){
@@ -46,13 +46,31 @@ export function slotHitCount(throws, slot){
  if(!Number.isInteger(slot)||slot<1||slot>20) throw new Error('Team slot must be 1-20.');
  return throws.map(normalizeThrow).filter(s=>s===String(slot)||s===`D${slot}`||s===`T${slot}`).length;
 }
-export function validateConfig(c){
- if(!c||!Number.isFinite(c.baseGoals)||c.baseGoals<0.3||c.baseGoals>3||!Number.isFinite(c.homeAdvantage)||c.homeAdvantage<1||c.homeAdvantage>2||!Number.isFinite(c.strengthScale)||c.strengthScale<10||c.strengthScale>100||!Number.isFinite(c.slotBoost)||c.slotBoost<0||c.slotBoost>0.5||!c.ratings||TEAMS.some(([id])=>!Number.isFinite(c.ratings[id])||c.ratings[id]<1||c.ratings[id]>100)) throw new Error('Check model values.');
+export function targetBoostValue(throws, slot){
+ if(!Number.isInteger(slot)||slot<1||slot>20) throw new Error('Team slot must be 1-20.');
+ return throws.map(normalizeThrow).reduce((total,s)=>{
+  if(s===String(slot)) return total+1;
+  if(s===`D${slot}`) return total+1.75;
+  if(s===`T${slot}`) return total+2.5;
+  return total;
+ },0);
 }
-export function expectedGoals(team, opponent, home, c=DEFAULT_CONFIG, boostHits=0){
+export function boostedPercentile(percentile, boostValue, c=DEFAULT_CONFIG){
+ validateConfig(c);
+ if(!Number.isFinite(percentile)||percentile<0||percentile>=1) throw new Error('Percentile must be in [0, 1).');
+ if(!Number.isFinite(boostValue)||boostValue<0) throw new Error('Boost value must be positive.');
+ const lift = Math.min(0.82, c.targetLift*boostValue);
+ const lifted = percentile+(1-percentile)*lift;
+ const targetFloor = boostValue>0 ? Math.min(0.92, 0.28+boostValue*0.18) : 0;
+ return Math.min(0.999999, Math.max(lifted, targetFloor));
+}
+export function validateConfig(c){
+ if(!c||!Number.isFinite(c.baseGoals)||c.baseGoals<0.3||c.baseGoals>3||!Number.isFinite(c.homeAdvantage)||c.homeAdvantage<1||c.homeAdvantage>2||!Number.isFinite(c.strengthScale)||c.strengthScale<10||c.strengthScale>100||!Number.isFinite(c.slotBoost)||c.slotBoost<0||c.slotBoost>0.5||!Number.isFinite(c.targetLift)||c.targetLift<0||c.targetLift>0.4||!c.ratings||TEAMS.some(([id])=>!Number.isFinite(c.ratings[id])||c.ratings[id]<1||c.ratings[id]>100)) throw new Error('Check model values.');
+}
+export function expectedGoals(team, opponent, home, c=DEFAULT_CONFIG, boostValue=0){
  validateConfig(c);
  if(c.ratings[team]===undefined||c.ratings[opponent]===undefined) throw new Error('Unknown team.');
- return Math.max(0.15, Math.min(4.5, c.baseGoals*Math.exp((c.ratings[team]-c.ratings[opponent])/c.strengthScale)*(home?c.homeAdvantage:1)*(1+c.slotBoost*boostHits)));
+ return Math.max(0.15, Math.min(4.5, c.baseGoals*Math.exp((c.ratings[team]-c.ratings[opponent])/c.strengthScale)*(home?c.homeAdvantage:1)*(1+c.slotBoost*boostValue)));
 }
 export function probabilities(lambda){
  const p=[Math.exp(-lambda)];
@@ -71,8 +89,10 @@ export function score(throws, team, opponent, home, c=DEFAULT_CONFIG){
  const slot = teamSlot(team);
  const result = combination(throws);
  const boostHits = slotHitCount(result.throws, slot);
- const lambda = expectedGoals(team, opponent, home, c, boostHits);
- return {...result,slot,boostHits,lambda,goals:goalsAt(result.percentile,lambda)};
+ const boostValue = targetBoostValue(result.throws, slot);
+ const lambda = expectedGoals(team, opponent, home, c, boostValue);
+ const scoringPercentile = boostedPercentile(result.percentile, boostValue, c);
+ return {...result,slot,boostHits,boostValue,lambda,scoringPercentile,goals:goalsAt(scoringPercentile,lambda)};
 }
 export function matchResult(f, e, c=DEFAULT_CONFIG){
  return {home:score(e.home,f.home,f.away,true,c), away:score(e.away,f.away,f.home,false,c)};
